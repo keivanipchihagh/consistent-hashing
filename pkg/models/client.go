@@ -1,6 +1,6 @@
 package models
 
-type Node struct {
+type Client struct {
 	Address string
 	hash    uint32
 }

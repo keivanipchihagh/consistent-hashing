@@ -7,27 +7,24 @@ import (
 )
 
 func main() {
-	hr := models.NewHashRing()
+	hr := models.NewHashRing(1)
 
 	// Add nodes
-	hr.AddNode("Node1")
-	hr.AddNode("Node2")
-	hr.AddNode("Node3")
+	hr.AddServer("S01")
+	hr.AddServer("S02")
+	hr.AddServer("S03")
+	hr.AddServer("S04")
 
 	// Test the distribution of keys
-	keys := []string{"key1", "key2", "key3", "key4", "key5"}
+	keys := []string{"C01", "C02", "C03", "C04", "C05", "C06", "C07", "C08", "C09"}
 
 	for _, key := range keys {
-		node := hr.GetNode(key)
-		fmt.Printf("Key %s is mapped to node %s\n", key, node.Address)
+		hr.AddClient(key)
 	}
+	hr.Print()
 
-	// Remove a node and see how keys are reassigned
-	fmt.Println("\nRemoving Node2")
-	hr.RemoveNode("Node2")
-
-	for _, key := range keys {
-		node := hr.GetNode(key)
-		fmt.Printf("Key %s is now mapped to node %s\n", key, node.Address)
-	}
+	fmt.Println("\nRemove S2:")
+	hr.RemoveServer("S04")
+	hr.DistributeClients()
+	hr.Print()
 }

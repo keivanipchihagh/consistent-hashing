@@ -1,83 +1,115 @@
 package models
 
 import (
-	"hash/crc32"
+	"fmt"
 	"sort"
 	"sync"
+
+	"github.com/keivanipchihagh/consistent-hashing/internal/utils"
 )
 
 type HashRing struct {
-	nodes []Node
-	mu    sync.Mutex
+	replicas int
+	servers  []Server
+	clients  []Client
+	mapping  map[string]string // Client -> Server
+	mu       sync.Mutex
 }
 
-func NewHashRing() *HashRing {
+func NewHashRing(replicas int) *HashRing {
 	return &HashRing{
-		nodes: make([]Node, 0),
-		mu:    sync.Mutex{},
+		replicas: replicas,
+		servers:  make([]Server, 0),
+		clients:  make([]Client, 0),
+		mapping:  make(map[string]string),
+		mu:       sync.Mutex{},
 	}
 }
 
 func (hr *HashRing) Len() int {
-	return len(hr.nodes)
+	return len(hr.servers)
 }
 
 func (hr *HashRing) Less(i, j int) bool {
-	return hr.nodes[i].hash < hr.nodes[j].hash
+	return hr.servers[i].hash < hr.servers[j].hash
 }
 
 func (hr *HashRing) Swap(i, j int) {
-	hr.nodes[i], hr.nodes[j] = hr.nodes[j], hr.nodes[i]
+	hr.servers[i], hr.servers[j] = hr.servers[j], hr.servers[i]
 }
 
-func (hr *HashRing) AddNode(address string) {
+func (hr *HashRing) AddServer(address string) {
 	hr.mu.Lock()
 	defer hr.mu.Unlock()
 
-	hash := crc32.ChecksumIEEE([]byte(address))
-
-	node := Node{
-		Address: address,
-		hash:    hash,
+	servers := Server{
+		Address:   address,
+		hash:      utils.Hash(address),
+		isVirtual: false,
 	}
-
-	hr.nodes = append(hr.nodes, node)
+	hr.servers = append(hr.servers, servers)
 	sort.Sort(hr)
 }
 
-func (hr *HashRing) RemoveNode(address string) {
+func (hr *HashRing) RemoveServer(address string) {
 	hr.mu.Lock()
 	defer hr.mu.Unlock()
 
-	hash := crc32.ChecksumIEEE([]byte(address))
+	hash := utils.Hash(address)
 
-	for i, node := range hr.nodes {
-		if node.hash == hash {
-			hr.nodes = append(hr.nodes[:i], hr.nodes[i+1:]...)
+	for i, server := range hr.servers {
+		if server.hash == hash {
+			hr.servers = append(hr.servers[:i], hr.servers[i+1:]...)
 			break
 		}
 	}
 	sort.Sort(hr)
 }
 
-func (hr *HashRing) GetNode(key string) Node {
+func (hr *HashRing) GetServer(address string) Server {
 	hr.mu.Lock()
 	defer hr.mu.Unlock()
 
-	if len(hr.nodes) == 0 {
-		return Node{}
-	}
+	hash := utils.Hash(address)
 
-	hash := crc32.ChecksumIEEE([]byte(key))
-
-	idx := sort.Search(len(hr.nodes), func(i int) bool {
-		return hr.nodes[i].hash >= hash
+	idx := sort.Search(len(hr.servers), func(i int) bool {
+		return hr.servers[i].hash >= hash
 	})
 
-	// If the hash is greater than all, wrap around to the first hash
-	if idx == len(hr.nodes) {
+	if idx == len(hr.servers) {
+		// Wrap around to the first hash
 		idx = 0
 	}
 
-	return hr.nodes[idx]
+	return hr.servers[idx]
+}
+
+func (hr *HashRing) AddClient(address string) {
+
+	server := hr.GetServer(address)
+	hr.mapping[address] = server.Address
+	client := Client{
+		Address: address,
+		hash:    utils.Hash(address),
+	}
+	hr.clients = append(hr.clients, client)
+}
+
+func (hr *HashRing) DistributeClients() {
+	for _, client := range hr.clients {
+		server := hr.GetServer(client.Address)
+		hr.mapping[client.Address] = server.Address
+	}
+}
+
+func (hr *HashRing) Print() {
+	for _, server := range hr.servers {
+		fmt.Printf("%s: ", server.Address)
+		for clientAddr, serverAddr := range hr.mapping {
+			if serverAddr == server.Address {
+				fmt.Printf("%s ", clientAddr)
+			}
+		}
+		fmt.Println()
+	}
 }
